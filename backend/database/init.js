@@ -10,50 +10,42 @@ const initDatabase = async () => {
   let todoClient;
   
   try {
+    // Använd DATABASE_URL för Render, fallback till lokal
+    const connectionString = process.env.DATABASE_URL || `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/postgres`;
+    
     client = new Client({
-      user: process.env.DB_USER,
-      host: process.env.DB_HOST,
-      database: 'postgres',
-      password: process.env.DB_PASSWORD,
-      port: process.env.DB_PORT,
+      connectionString: connectionString,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
     });
 
     await client.connect();
     console.log('Connected to PostgreSQL');
 
     // Kontrollera om databasen redan finns
+    const dbName = process.env.NODE_ENV === 'production' ? 'todo_db_t2c0' : 'todo_db';
     const dbCheck = await client.query(`
-      SELECT 1 FROM pg_database WHERE datname = 'todo_db'
-    `);
+      SELECT 1 FROM pg_database WHERE datname = $1
+    `, [dbName]);
 
     if (dbCheck.rows.length > 0) {
-      console.log('Database already exists, dropping...');
-      // Koppla bort alla anslutningar först
-      await client.query(`
-        SELECT pg_terminate_backend(pid) 
-        FROM pg_stat_activity 
-        WHERE datname = 'todo_db' AND pid <> pg_backend_pid()
-      `);
-      await client.query('DROP DATABASE todo_db');
+      console.log('Database already exists');
+    } else {
+      console.log('Creating database...');
+      await client.query(`CREATE DATABASE ${dbName}`);
     }
-
-    // Skapa databas
-    await client.query('CREATE DATABASE todo_db');
-    console.log('Database created successfully');
 
     await client.end();
 
     // Anslut till den nya databasen
+    const todoConnectionString = process.env.DATABASE_URL || `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${dbName}`;
+    
     todoClient = new Client({
-      user: process.env.DB_USER,
-      host: process.env.DB_HOST,
-      database: 'todo_db',
-      password: process.env.DB_PASSWORD,
-      port: process.env.DB_PORT,
+      connectionString: todoConnectionString,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
     });
 
     await todoClient.connect();
-    console.log('Connected to todo_db');
+    console.log('Connected to todo database');
 
     // Skapa tabell
     await todoClient.query(`
@@ -67,7 +59,9 @@ const initDatabase = async () => {
       )
     `);
 
-    // Lägg till data med svenska tecken
+    // Rensa och lägg till data
+    await todoClient.query('DELETE FROM todos');
+    
     await todoClient.query(`
       INSERT INTO todos (title, description) 
       VALUES 
@@ -83,27 +77,13 @@ const initDatabase = async () => {
       'Publicera appen på Render'
     ]);
 
-    console.log('✅ Database initialized successfully with Swedish characters');
-    
-    // Verifiera data
-    const result = await todoClient.query('SELECT * FROM todos');
-    console.log('Sample data:');
-    result.rows.forEach(row => {
-      console.log(`- ${row.title}: ${row.description}`);
-    });
+    console.log('✅ Database initialized successfully');
     
   } catch (error) {
     console.error('❌ Database initialization error:', error);
   } finally {
-    // Stäng alltid connections
-    if (todoClient) {
-      await todoClient.end();
-      console.log('Todo client connection closed');
-    }
-    if (client) {
-      await client.end();
-      console.log('Main client connection closed');
-    }
+    if (todoClient) await todoClient.end();
+    if (client) await client.end();
     process.exit(0);
   }
 };
