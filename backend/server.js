@@ -2,144 +2,235 @@ import express from 'express';
 import cors from 'cors';
 import pkg from 'pg';
 import dotenv from 'dotenv';
-import path from 'path';
 
+// Load environment variables first
 dotenv.config();
 
 const { Pool } = pkg;
 const app = express();
 const port = process.env.PORT || 5000;
-const __dirname = path.resolve();
+
+// Debug environment variables
+console.log('Environment check:', {
+  nodeEnv: process.env.NODE_ENV,
+  hasDatabaseUrl: !!process.env.DATABASE_URL,
+  databaseUrlLength: process.env.DATABASE_URL ? process.env.DATABASE_URL.length : 0,
+  port: process.env.PORT
+});
 
 // Middleware
 app.use(cors({
   origin: process.env.CLIENT_URL || [
     'http://localhost:5173', 
-    'https://todo-frontend.onrender.com'
+    'https://todo-fullstack-1-bgbx.onrender.com'
   ],
   credentials: true
 }));
 app.use(express.json());
 
-// PostgreSQL connection pool - UPPDATERAD FÖR RENDER
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+// PostgreSQL connection pool - FIXED FOR RENDER
+const getPoolConfig = () => {
+  // If DATABASE_URL is provided (Render), use it directly
+  if (process.env.DATABASE_URL) {
+    return {
+      connectionString: process.env.DATABASE_URL,
+      ssl: {
+        rejectUnauthorized: false
+      },
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    };
+  }
+  
+  // Fallback to local development config
+  return {
+    user: process.env.DB_USER || 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    database: process.env.DB_NAME || 'todo_db',
+    password: process.env.DB_PASSWORD || 'password',
+    port: process.env.DB_PORT || 5432,
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+  };
+};
 
-// Test database connection
+const pool = new Pool(getPoolConfig());
+
+// Enhanced database connection test
 const testConnection = async () => {
+  let client;
   try {
-    const client = await pool.connect();
+    console.log('🔍 Testing database connection...');
+    client = await pool.connect();
+    
     console.log('✅ PostgreSQL connected successfully');
     
-    // Testa att tabellen finns, skapa om den inte gör det
-    try {
-      const tableCheck = await client.query(`
-        SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_name = 'todos'
+    // Check if todos table exists
+    const tableCheck = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'todos'
+      );
+    `);
+    
+    console.log('📊 Todos table exists:', tableCheck.rows[0].exists);
+    
+    // Create table if it doesn't exist
+    if (!tableCheck.rows[0].exists) {
+      console.log('🛠️ Creating todos table...');
+      await client.query(`
+        CREATE TABLE todos (
+          id SERIAL PRIMARY KEY,
+          title VARCHAR(255) NOT NULL,
+          description TEXT,
+          completed BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
       
-      if (!tableCheck.rows[0].exists) {
-        console.log('Creating todos table...');
-        await client.query(`
-          CREATE TABLE todos (
-            id SERIAL PRIMARY KEY,
-            title VARCHAR(255) NOT NULL,
-            description TEXT,
-            completed BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          )
-        `);
-        
-        // Lägg till exempeldata
-        await client.query(`
-          INSERT INTO todos (title, description) 
-          VALUES 
-            ('Lär dig React', 'Studera React dokumentation'),
-            ('Bygg Todo-app', 'Skapa en fullstack applikation'),
-            ('Distribuera till Render', 'Publicera appen på Render')
-        `);
-        console.log('✅ Table created with sample data');
-      }
-    } catch (tableError) {
-      console.log('Table check skipped:', tableError.message);
+      // Add sample data
+      await client.query(`
+        INSERT INTO todos (title, description) 
+        VALUES 
+          ('Lär dig React', 'Studera React dokumentation'),
+          ('Bygg Todo-app', 'Skapa en fullstack applikation'),
+          ('Distribuera till Render', 'Publicera appen på Render');
+      `);
+      
+      console.log('✅ Table created with sample data');
+    } else {
+      console.log('✅ Table already exists');
     }
     
-    client.release();
+    // Test data retrieval
+    const testResult = await client.query('SELECT COUNT(*) FROM todos');
+    console.log(`📈 Total todos in database: ${testResult.rows[0].count}`);
+    
   } catch (error) {
     console.error('❌ Database connection error:', error.message);
-    // Avsluta inte processen i production, låt Render hantera omstarter
+    console.error('Error details:', {
+      code: error.code,
+      detail: error.detail
+    });
+    
+    // Don't exit process in production - let Render handle restarts
     if (process.env.NODE_ENV !== 'production') {
-      process.exit(1);
+      console.log('🔄 Would exit in development, continuing in production...');
+    }
+  } finally {
+    if (client) {
+      client.release();
+      console.log('🔌 Database client released');
     }
   }
 };
 
-// Init database route för Render
+// Enhanced init database route
 app.post('/api/init-db', async (req, res) => {
+  let client;
   try {
-    const client = await pool.connect();
+    console.log('🔄 Initializing database...');
+    client = await pool.connect();
     
-    // Skapa tabell om den inte finns
+    // Drop and recreate table
+    await client.query('DROP TABLE IF EXISTS todos CASCADE;');
+    
     await client.query(`
-      CREATE TABLE IF NOT EXISTS todos (
+      CREATE TABLE todos (
         id SERIAL PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
         description TEXT,
         completed BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
+      );
     `);
     
-    // Rensa befintlig data och lägg till ny
-    await client.query('DELETE FROM todos');
-    
+    // Insert fresh data
     await client.query(`
       INSERT INTO todos (title, description) 
       VALUES 
         ('Lär dig React', 'Studera React dokumentation'),
         ('Bygg Todo-app', 'Skapa en fullstack applikation'),
-        ('Distribuera till Render', 'Publicera appen på Render')
+        ('Distribuera till Render', 'Publicera appen på Render');
     `);
     
-    client.release();
+    console.log('✅ Database initialized successfully');
     
     res.json({ 
       success: true, 
-      message: 'Database initialized successfully' 
+      message: 'Database initialized successfully',
+      data: {
+        table: 'todos',
+        records: 3
+      }
     });
+    
   } catch (error) {
-    console.error('Init DB error:', error);
+    console.error('❌ Init DB error:', error);
     res.status(500).json({ 
       success: false, 
-      error: error.message 
+      error: error.message,
+      details: 'Check Render environment variables'
     });
+  } finally {
+    if (client) {
+      client.release();
+    }
   }
 });
 
-// Routes
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    message: 'Server is running',
-    timestamp: new Date().toISOString(),
+// Health check with database test
+app.get('/api/health', async (req, res) => {
+  let client;
+  try {
+    client = await pool.connect();
+    const dbResult = await client.query('SELECT 1 as test');
+    
+    res.json({ 
+      status: 'OK', 
+      message: 'Server and database are running',
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development',
+      database: 'connected',
+      databaseTest: dbResult.rows[0].test
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Server running but database connection failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// Root route
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Todo App Backend API',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/health',
+      todos: '/api/todos',
+      initDb: '/api/init-db (POST)'
+    },
     environment: process.env.NODE_ENV || 'development'
   });
 });
 
+// Todos routes
 app.get('/api/todos', async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM todos ORDER BY created_at DESC'
     );
+    
     res.json({
       success: true,
       data: result.rows,
@@ -249,9 +340,35 @@ app.delete('/api/todos/:id', async (req, res) => {
   }
 });
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    success: false,
+    error: 'Internal server error'
+  });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'Route not found'
+  });
+});
+
 // Start server
 app.listen(port, async () => {
   console.log(`🚀 Server running on port ${port}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  await testConnection();
+  console.log(`📍 Health check: http://localhost:${port}/api/health`);
+  
+  // Test connection but don't block server start
+  testConnection().then(() => {
+    console.log('✅ Database initialization completed');
+  }).catch(err => {
+    console.log('⚠️ Database initialization had issues, but server is running');
+  });
 });
+
+export default app;
