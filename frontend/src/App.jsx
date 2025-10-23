@@ -20,7 +20,7 @@ function App() {
     const response = await fetch(`${API_BASE_URL}/todos`);
     const result = await response.json();
     
-    console.log('API Response:', result); // Debug
+    console.log('API Response:', result); // Debugg
     
     // FIX: Hämta data från result.data istället för result
     if (result.success && Array.isArray(result.data)) {
