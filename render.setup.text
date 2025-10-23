@@ -1,0 +1,164 @@
+Skapa PostgreSQL Database på Render
+
+Steg 1: Gå till Render.com
+Logga in/skapa konto på render.com
+
+Klicka "New +" → "PostgreSQL"
+
+Steg 2: Konfigurera databasen
+Name: todo-db
+
+Database: todo_db (lägg märke till skillnaden i namn)
+
+User: todo_user
+
+Region: "Frankfurt (EU Central)" (närmast Sverige)
+
+Plan: Free (för test)
+
+Klicka "Create PostgreSQL"
+
+Steg 3: Spara connection string
+Gå till din nya databas på Render
+
+Klicka på "Connect"
+
+SPARA "External Database URL" - du behöver den senare!
+
+3. Deploy Backend till Render
+Steg 1: Skapa Web Service
+Klicka "New +" → "Web Service"
+
+Anslut till ditt GitHub repo
+
+Steg 2: Konfigurera Backend
+Name: todo-backend (eller vad du vill)
+
+Environment: Node
+
+Region: Frankfurt (samma som databasen)
+
+Branch: main (eller master)
+
+Root Directory: backend
+
+Build Command: npm install
+
+Start Command: npm start
+
+Steg 3: Environment Variables för Backend
+Lägg till dessa miljövariabler:
+
+
+NODE_ENV = production
+DATABASE_URL = din_externa_database_url_från_steg_2
+CLIENT_URL = https://your-frontend-app.onrender.com
+Steg 4: Deploy
+Klicka "Create Web Service"
+
+4. Deploy Frontend till Render
+Steg 1: Skapa Static Site
+Klicka "New +" → "Static Site"
+
+Anslut till samma GitHub repo
+
+Steg 2: Konfigurera Frontend
+Name: todo-frontend
+
+Branch: main (eller master)
+
+Root Directory: frontend
+
+Build Command: npm run build
+
+Publish Directory: dist
+
+Steg 3: Environment Variables för Frontend
+
+VITE_API_URL = https://your-backend-app.onrender.com
+Steg 4: Deploy
+Klicka "Create Static Site"
+
+5. Initiera databasen på Render
+När backend är uppe, initiera databasen:
+
+Metod 1: Använd Render Shell
+Gå till din backend service på Render
+
+Klicka "Shell"
+
+Kör: node database/init.js
+
+Metod 2: Skapa en init route
+Lägg till detta i backend/server.js:
+
+// Init route för databasen
+app.post('/api/init-db', async (req, res) => {
+  try {
+    // Importera och kör init script
+    const { initDatabase } = await import('./database/init.js');
+    await initDatabase();
+    res.json({ success: true, message: 'Database initialized' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+Sedan använd curl eller Postman:
+
+curl -X POST https://your-backend.onrender.com/api/init-db
+
+6. Uppdatera package.json för Production
+backend/package.json - se till att scripts ser ut så här:
+
+{
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "db:init": "node database/init.js"
+  }
+}
+
+7. Final Checklista
+Innan deploy:
+Backend fungerar lokalt
+
+Frontend fungerar lokalt
+
+All kod är pushat till GitHub
+
+DATABASE_URL från Render är sparad
+
+init.js finns i backend/database/
+
+Efter deploy:
+Backend health check: https://your-backend.onrender.com/api/health
+
+Initiera databasen
+
+Testa API: https://your-backend.onrender.com/api/todos
+
+Testa frontend: https://your-frontend.onrender.com
+
+8. Troubleshooting
+Vanliga problem:
+CORS error: Uppdatera CLIENT_URL i backend environment variables
+
+Database connection failed: Kontrollera DATABASE_URL är korrekt
+
+Frontend visar inte data: Kontrollera VITE_API_URL i frontend
+
+Static site visar blank page: Lägg till _redirects fil i frontend/public:
+
+/*    /index.html   200
+
+9. Live URLs
+När allt är klart kommer du ha:
+
+Frontend: https://todo-frontend.onrender.com
+
+Backend: https://todo-backend.onrender.com
+
+Database: Render PostgreSQL
+
+Rekommendation: Deploya backend först, initiera databasen, sedan frontend! 🚀

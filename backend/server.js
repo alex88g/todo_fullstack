@@ -115,11 +115,6 @@ const testConnection = async () => {
       code: error.code,
       detail: error.detail
     });
-    
-    // Don't exit process in production - let Render handle restarts
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('🔄 Would exit in development, continuing in production...');
-    }
   } finally {
     if (client) {
       client.release();
@@ -349,11 +344,12 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
+// FIXED: 404 handler - use express built-in instead of router
+app.use((req, res) => {
   res.status(404).json({
     success: false,
-    error: 'Route not found'
+    error: 'Route not found',
+    path: req.path
   });
 });
 
