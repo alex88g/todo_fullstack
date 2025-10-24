@@ -3,14 +3,12 @@ import cors from 'cors';
 import pkg from 'pg';
 import dotenv from 'dotenv';
 
-// Load environment variables first
 dotenv.config();
 
 const { Pool } = pkg;
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Debug environment variables
 console.log('Environment check:', {
   nodeEnv: process.env.NODE_ENV,
   hasDatabaseUrl: !!process.env.DATABASE_URL,
@@ -18,7 +16,6 @@ console.log('Environment check:', {
   port: process.env.PORT
 });
 
-// Middleware
 app.use(cors({
   origin: process.env.CLIENT_URL || [
     'http://localhost:5173', 
@@ -28,9 +25,8 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// PostgreSQL connection pool - FIXED FOR RENDER
+
 const getPoolConfig = () => {
-  // If DATABASE_URL is provided (Render), use it directly
   if (process.env.DATABASE_URL) {
     return {
       connectionString: process.env.DATABASE_URL,
@@ -43,7 +39,6 @@ const getPoolConfig = () => {
     };
   }
   
-  // Fallback to local development config
   return {
     user: process.env.DB_USER || 'postgres',
     host: process.env.DB_HOST || 'localhost',
@@ -58,7 +53,6 @@ const getPoolConfig = () => {
 
 const pool = new Pool(getPoolConfig());
 
-// Enhanced database connection test
 const testConnection = async () => {
   let client;
   try {
@@ -67,7 +61,6 @@ const testConnection = async () => {
     
     console.log('✅ PostgreSQL connected successfully');
     
-    // Check if todos table exists
     const tableCheck = await client.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -77,7 +70,6 @@ const testConnection = async () => {
     
     console.log('📊 Todos table exists:', tableCheck.rows[0].exists);
     
-    // Create table if it doesn't exist
     if (!tableCheck.rows[0].exists) {
       console.log('🛠️ Creating todos table...');
       await client.query(`
@@ -91,7 +83,7 @@ const testConnection = async () => {
         );
       `);
       
-      // Add sample data
+  
       await client.query(`
         INSERT INTO todos (title, description) 
         VALUES 
@@ -105,7 +97,6 @@ const testConnection = async () => {
       console.log('✅ Table already exists');
     }
     
-    // Test data retrieval
     const testResult = await client.query('SELECT COUNT(*) FROM todos');
     console.log(`📈 Total todos in database: ${testResult.rows[0].count}`);
     
@@ -123,14 +114,12 @@ const testConnection = async () => {
   }
 };
 
-// Enhanced init database route
 app.post('/api/init-db', async (req, res) => {
   let client;
   try {
     console.log('🔄 Initializing database...');
     client = await pool.connect();
     
-    // Drop and recreate table
     await client.query('DROP TABLE IF EXISTS todos CASCADE;');
     
     await client.query(`
@@ -144,7 +133,6 @@ app.post('/api/init-db', async (req, res) => {
       );
     `);
     
-    // Insert fresh data
     await client.query(`
       INSERT INTO todos (title, description) 
       VALUES 
@@ -178,7 +166,6 @@ app.post('/api/init-db', async (req, res) => {
   }
 });
 
-// Health check with database test
 app.get('/api/health', async (req, res) => {
   let client;
   try {
@@ -205,7 +192,6 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// Root route
 app.get('/', (req, res) => {
   res.json({
     message: 'Todo App Backend API',
@@ -219,7 +205,6 @@ app.get('/', (req, res) => {
   });
 });
 
-// Todos routes
 app.get('/api/todos', async (req, res) => {
   try {
     const result = await pool.query(
@@ -335,7 +320,6 @@ app.delete('/api/todos/:id', async (req, res) => {
   }
 });
 
-// Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({
@@ -344,7 +328,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// FIXED: 404 handler - use express built-in instead of router
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -353,17 +336,15 @@ app.use((req, res) => {
   });
 });
 
-// Start server
 app.listen(port, async () => {
-  console.log(`🚀 Server running on port ${port}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📍 Health check: http://localhost:${port}/api/health`);
+  console.log(`Server running on port ${port}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Health check: http://localhost:${port}/api/health`);
   
-  // Test connection but don't block server start
   testConnection().then(() => {
-    console.log('✅ Database initialization completed');
+    console.log('Database initialization completed');
   }).catch(err => {
-    console.log('⚠️ Database initialization had issues, but server is running');
+    console.log('Database initialization had issues, but server is running');
   });
 });
 

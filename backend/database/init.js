@@ -11,7 +11,6 @@ const initDatabase = async () => {
   try {
     console.log('🔄 Starting database initialization...');
     
-    // Use DATABASE_URL for Render, fallback for local
     const connectionConfig = process.env.DATABASE_URL ? {
       connectionString: process.env.DATABASE_URL,
       ssl: { rejectUnauthorized: false }
@@ -27,7 +26,6 @@ const initDatabase = async () => {
     await client.connect();
     console.log('✅ Connected to database');
 
-    // Create table
     await client.query(`
       CREATE TABLE IF NOT EXISTS todos (
         id SERIAL PRIMARY KEY,
@@ -39,7 +37,6 @@ const initDatabase = async () => {
       );
     `);
 
-    // Clear and insert data
     await client.query('DELETE FROM todos;');
     
     await client.query(`
